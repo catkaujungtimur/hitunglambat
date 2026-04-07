@@ -3,21 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Kelambatan KA (Paten 24 Jam)</title>
+    <title>Kalkulator Kelambatan KA - catkaujungtimur</title>
     <style>
         :root { --primary: #002d5e; --secondary: #f39c12; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 750px; }
-        h2 { text-align: center; color: var(--primary); margin-bottom: 10px; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h2 { text-align: center; color: var(--primary); margin-bottom: 5px; }
+        .info { font-size: 11px; color: #d35400; margin-bottom: 20px; text-align: center; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
         th { background-color: var(--primary); color: white; font-size: 13px; }
-        /* Gunakan input text agar tidak dipaksa AM/PM oleh browser */
-        .time-input { width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; font-family: monospace; }
-        input[type="number"] { width: 60px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; font-weight: bold; }
+        .time-input { width: 75px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; font-family: monospace; }
+        .lambat-input { width: 60px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; font-weight: bold; }
         .btn-group { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
         button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; background: var(--secondary); color: white; font-weight: bold; }
-        .info { font-size: 11px; color: #d35400; margin-bottom: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -52,25 +51,31 @@
         const row = document.createElement("tr");
 
         row.innerHTML = `
-            <td><input type="text" class="time-input tepat" value="${data.tepat}" placeholder="00:00" maxlength="5" oninput="formatTime(this); calculate(this)"></td>
-            <td><input type="text" class="time-input riil" value="${data.riil}" placeholder="00:00" maxlength="5" oninput="formatTime(this); calculate(this)"></td>
-            <td><input type="number" class="lambat" value="${data.lambat}" oninput="calculate(this)"></td>
+            <td><input type="text" class="time-input tepat" value="${data.tepat}" placeholder="00:00" maxlength="5" oninput="formatAndCalc(this, 'tepat')"></td>
+            <td><input type="text" class="time-input riil" value="${data.riil}" placeholder="00:00" maxlength="5" oninput="formatAndCalc(this, 'riil')"></td>
+            <td><input type="number" class="lambat-input lambat" value="${data.lambat}" oninput="formatAndCalc(this, 'lambat')"></td>
         `;
         tbody.appendChild(row);
     }
 
-    // Fungsi otomatis menambah titik dua (:) saat mengetik jam
-    function formatTime(el) {
-        let v = el.value.replace(/\D/g, '');
-        if (v.length > 2) v = v.substring(0, 2) + ':' + v.substring(2, 4);
-        el.value = v;
+    function formatAndCalc(el, type) {
+        // Jika input jam, tambahkan titik dua otomatis
+        if (type !== 'lambat') {
+            let v = el.value.replace(/\D/g, '');
+            if (v.length >= 3) {
+                v = v.substring(0, 2) + ':' + v.substring(2, 4);
+            }
+            el.value = v;
+        }
+        
+        // Jalankan perhitungan
+        calculate(el, type);
     }
 
     function timeToMinutes(timeStr) {
-        if (!timeStr.includes(':')) return null;
-        const [hrs, mins] = timeStr.split(':').map(Number);
-        if (isNaN(hrs) || isNaN(mins)) return null;
-        return (hrs * 60) + mins;
+        if (!timeStr || timeStr.length < 5) return null;
+        const parts = timeStr.split(':');
+        return (parseInt(parts[0]) * 60) + parseInt(parts[1]);
     }
 
     function minutesToTime(totalMins) {
@@ -80,30 +85,37 @@
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
     }
 
-    function calculate(el) {
+    function calculate(el, type) {
         const row = el.closest("tr");
-        const tepatInput = row.querySelector(".tepat");
-        const riilInput = row.querySelector(".riil");
-        const lambatInput = row.querySelector(".lambat");
+        const tepatIn = row.querySelector(".tepat");
+        const riilIn = row.querySelector(".riil");
+        const lambatIn = row.querySelector(".lambat");
 
-        const valTepat = tepatInput.value;
-        const valRiil = riilInput.value;
-        const valLambat = parseInt(lambatInput.value);
+        const mTepat = timeToMinutes(tepatIn.value);
+        const mRiil = timeToMinutes(riilIn.value);
+        const mLambat = parseInt(lambatIn.value);
 
-        // Hanya hitung jika format waktu lengkap (HH:MM)
-        if (valTepat.length === 5 && valRiil.length === 5 && el !== lambatInput) {
-            let minsTepat = timeToMinutes(valTepat);
-            let minsRiil = timeToMinutes(valRiil);
-            let diff = minsRiil - minsTepat;
+        // LOGIKA 1: Jika sedang isi Lambat dan sudah ada Waktu Tepat -> Cari Riil
+        if (type === 'lambat' && mTepat !== null && !isNaN(mLambat)) {
+            riilIn.value = minutesToTime(mTepat + mLambat);
+        }
+        // LOGIKA 2: Jika sedang isi Riil dan sudah ada Lambat -> Cari Tepat
+        else if (type === 'riil' && mRiil !== null && !isNaN(mLambat)) {
+            tepatIn.value = minutesToTime(mRiil - mLambat);
+        }
+        // LOGIKA 3: Jika sedang isi Riil dan sudah ada Tepat -> Cari Lambat
+        else if (type === 'riil' && mRiil !== null && mTepat !== null) {
+            let diff = mRiil - mTepat;
             if (diff < -720) diff += 1440; 
             else if (diff > 720) diff -= 1440;
-            lambatInput.value = diff;
-        } 
-        else if (valTepat.length === 5 && !isNaN(valLambat) && el !== riilInput) {
-            riilInput.value = minutesToTime(timeToMinutes(valTepat) + valLambat);
+            lambatIn.value = diff;
         }
-        else if (valRiil.length === 5 && !isNaN(valLambat) && el !== tepatInput) {
-            tepatInput.value = minutesToTime(timeToMinutes(valRiil) - valLambat);
+        // LOGIKA 4: Jika sedang isi Tepat dan sudah ada Riil -> Cari Lambat
+        else if (type === 'tepat' && mTepat !== null && mRiil !== null) {
+            let diff = mRiil - mTepat;
+            if (diff < -720) diff += 1440; 
+            else if (diff > 720) diff -= 1440;
+            lambatIn.value = diff;
         }
     }
 
@@ -117,7 +129,7 @@
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "Laporan_Kelambatan.json";
+        a.download = "Data_Kelambatan_KA.json";
         a.click();
     }
 
@@ -133,6 +145,5 @@
 
     for(let i=0; i<10; i++) addRow();
 </script>
-
 </body>
 </html>
