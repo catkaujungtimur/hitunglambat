@@ -5,30 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kalkulator Kelambatan KA - catkaujungtimur</title>
     <style>
-        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
-        h2 { text-align: center; color: #002d5e; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-        th { background-color: #002d5e; color: white; }
-        input { width: 80%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
-        .btn-group { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
-        button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; background: #f39c12; color: white; font-weight: bold; }
-        button:hover { opacity: 0.8; }
-        .export-btn { background: #27ae60; }
+        :root { --primary: #002d5e; --secondary: #f39c12; --success: #27ae60; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 700px; }
+        h2 { text-align: center; color: var(--primary); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: var(--primary); color: white; font-size: 14px; }
+        /* Memaksa input jam menggunakan format 24 jam */
+        input[type="time"] { width: 90%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; }
+        input[type="number"] { width: 80%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; text-align: center; font-size: 16px; font-weight: bold; }
+        .btn-group { margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 4px; background: var(--secondary); color: white; font-weight: bold; transition: 0.3s; }
+        button:hover { opacity: 0.8; transform: translateY(-2px); }
+        .export-btn { background: var(--success); }
+        .info { font-size: 12px; color: #666; margin-top: 10px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>Kalkulator Kelambatan KA</h2>
+    <div class="info">Format waktu otomatis mengikuti pengaturan sistem 24-jam Anda.</div>
     
     <table id="calcTable">
         <thead>
             <tr>
-                <th>Waktu Tepat</th>
-                <th>Waktu Riil</th>
-                <th>Kelambatan (Menit)</th>
+                <th>Waktu Tepat (24j)</th>
+                <th>Waktu Riil (24j)</th>
+                <th>Lambat (Menit)</th>
             </tr>
         </thead>
         <tbody>
@@ -37,14 +42,15 @@
 
     <div class="btn-group">
         <button onclick="addRow()">+ Tambah Baris</button>
-        <button class="export-btn" onclick="exportJSON()">Export JSON</button>
+        <button class="export-btn" onclick="exportJSON()">💾 Simpan (JSON)</button>
         <input type="file" id="importFile" style="display:none" onchange="importJSON(event)">
-        <button onclick="document.getElementById('importFile').click()">Import JSON</button>
+        <button onclick="document.getElementById('importFile').click()">📂 Buka (JSON)</button>
+        <button style="background:#e74c3c;" onclick="if(confirm('Hapus semua data?')) location.reload()">🔄 Reset</button>
     </div>
 </div>
 
 <script>
-    // Fungsi untuk menambah baris baru
+    // Fungsi menambah baris
     function addRow(data = { tepat: "", riil: "", lambat: "" }) {
         const tbody = document.querySelector("#calcTable tbody");
         const row = document.createElement("tr");
@@ -57,64 +63,81 @@
         tbody.appendChild(row);
     }
 
-    // Logika perhitungan otomatis
+    // Fungsi konversi string "HH:MM" ke total menit sejak 00:00
+    function timeToMinutes(timeStr) {
+        const [hrs, mins] = timeStr.split(':').map(Number);
+        return (hrs * 60) + mins;
+    }
+
+    // Fungsi konversi total menit ke string "HH:MM" (format 24 jam)
+    function minutesToTime(totalMins) {
+        totalMins = (totalMins + 1440) % 1440; // Pastikan tetap dalam rentang 0-1439 menit
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    }
+
     function calculate(el) {
         const row = el.closest("tr");
-        const tepat = row.querySelector(".tepat");
-        const riil = row.querySelector(".riil");
-        const lambat = row.querySelector(".lambat");
+        const tepatInput = row.querySelector(".tepat");
+        const riilInput = row.querySelector(".riil");
+        const lambatInput = row.querySelector(".lambat");
 
-        // Jika Tepat & Riil terisi -> Hitung Lambat
-        if (tepat.value && riil.value && el !== lambat) {
-            const t = new Date("1970-01-01T" + tepat.value);
-            const r = new Date("1970-01-01T" + riil.value);
-            let diff = (r - t) / 60000; // dalam menit
-            if (diff < 0) diff += 1440; // Jika lewat tengah malam
-            lambat.value = diff;
+        const valTepat = tepatInput.value;
+        const valRiil = riilInput.value;
+        const valLambat = parseInt(lambatInput.value);
+
+        // 1. Hitung Kelambatan (Tepat & Riil terisi)
+        if (valTepat && valRiil && el !== lambatInput) {
+            let minsTepat = timeToMinutes(valTepat);
+            let minsRiil = timeToMinutes(valRiil);
+            let diff = minsRiil - minsTepat;
+            
+            // Logika jika melewati tengah malam (Contoh: Tepat 23:50, Riil 00:10)
+            if (diff < -720) diff += 1440; 
+            else if (diff > 720) diff -= 1440;
+
+            lambatInput.value = diff;
         } 
-        // Jika Tepat & Lambat terisi -> Hitung Riil
-        else if (tepat.value && lambat.value && el !== riil) {
-            const t = new Date("1970-01-01T" + tepat.value);
-            t.setMinutes(t.getMinutes() + parseInt(lambat.value));
-            riil.value = t.toTimeString().slice(0, 5);
+        // 2. Hitung Waktu Riil (Tepat & Lambat terisi)
+        else if (valTepat && !isNaN(valLambat) && el !== riilInput) {
+            let totalMins = timeToMinutes(valTepat) + valLambat;
+            riilInput.value = minutesToTime(totalMins);
         }
-        // Jika Riil & Lambat terisi -> Hitung Tepat
-        else if (riil.value && lambat.value && el !== tepat) {
-            const r = new Date("1970-01-01T" + riil.value);
-            r.setMinutes(r.getMinutes() - parseInt(lambat.value));
-            tepat.value = r.toTimeString().slice(0, 5);
+        // 3. Hitung Waktu Tepat (Riil & Lambat terisi)
+        else if (valRiil && !isNaN(valLambat) && el !== tepatInput) {
+            let totalMins = timeToMinutes(valRiil) - valLambat;
+            tepatInput.value = minutesToTime(totalMins);
         }
     }
 
-    // Export data ke file JSON
     function exportJSON() {
         const rows = document.querySelectorAll("#calcTable tbody tr");
         const data = Array.from(rows).map(row => ({
             tepat: row.querySelector(".tepat").value,
             riil: row.querySelector(".riil").value,
             lambat: row.querySelector(".lambat").value
-        }));
-        const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
+        })).filter(item => item.tepat || item.riil); // Hanya simpan yang ada isinya
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const a = document.createElement("a");
-        a.href = url;
-        a.download = "data_kelambatan.json";
+        a.href = URL.createObjectURL(blob);
+        a.download = `Laporan_Lambat_${new Date().toLocaleDateString()}.json`;
         a.click();
     }
 
-    // Import data dari file JSON
     function importJSON(event) {
         const reader = new FileReader();
         reader.onload = function() {
             const data = JSON.parse(reader.result);
-            document.querySelector("#calcTable tbody").innerHTML = ""; // Bersihkan tabel
+            document.querySelector("#calcTable tbody").innerHTML = "";
             data.forEach(item => addRow(item));
         };
         reader.readAsText(event.target.files[0]);
     }
 
-    // Tambah 5 baris kosong saat awal buka
-    for(let i=0; i<5; i++) addRow();
+    // Awal buka tampilkan 10 baris
+    for(let i=0; i<10; i++) addRow();
 </script>
 
 </body>
