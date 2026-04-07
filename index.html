@@ -41,19 +41,21 @@
     <div class="sub">catkaujungtimur • sinyal otomatis</div>
     <div class="info">✨ Cukup isi 2 kolom manapun — kolom ke-3 akan terisi otomatis ✨</div>
     
-    <table id="calcTable">
-        <thead>
-            <tr>
-                <th>⏱️ Waktu Tepat (jadwal)</th>
-                <th>🕒 Waktu Riil (aktual)</th>
-                <th>⏳ Lambat (menit)</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+    <div style="overflow-x: auto;">
+        <table id="calcTable">
+            <thead>
+                <tr>
+                    <th>⏱️ Waktu Tepat (jadwal)</th>
+                    <th>🕒 Waktu Riil (aktual)</th>
+                    <th>⏳ Lambat (menit)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
 
     <div class="btn-group">
-        <button onclick="addRow()" style="background:#2c3e50;">➕ Baris Baru</button>
+        <button onclick="addNewRow()" style="background:#2c3e50;">➕ Baris Baru</button>
         <button class="btn-success" onclick="exportJSON()">💾 Simpan JSON</button>
         <input type="file" id="importFile" style="display:none" accept=".json" onchange="importJSON(event)">
         <button class="btn-outline" onclick="document.getElementById('importFile').click()">📂 Buka JSON</button>
@@ -68,7 +70,6 @@
         if (!timeStr || typeof timeStr !== 'string') return null;
         const trimmed = timeStr.trim();
         if (trimmed.length < 5) return null;
-        // format harus HH:MM
         const regex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
         if (!regex.test(trimmed)) return null;
         const parts = trimmed.split(':');
@@ -79,9 +80,8 @@
         return (hours * 60) + minutes;
     }
 
-    // menit ke string HH:MM (selalu valid)
+    // menit ke string HH:MM
     function minutesToTime(totalMins) {
-        // normalisasi untuk range -12 jam sampai +12 jam, tetapi dipastikan 0-1439 untuk display
         let normalized = totalMins % 1440;
         if (normalized < 0) normalized += 1440;
         const hrs = Math.floor(normalized / 60);
@@ -90,11 +90,12 @@
     }
 
     // fungsi utama perbaikan logika: update field berdasarkan dua nilai yang terisi
-    // ini akan dipanggil setelah setiap perubahan input, dan melakukan update silang secara cerdas
-    function smartUpdate(row, triggeredInputType) {
+    function smartUpdate(row) {
         const tepatInput = row.querySelector(".tepat");
         const riilInput = row.querySelector(".riil");
         const lambatInput = row.querySelector(".lambat");
+
+        if (!tepatInput || !riilInput || !lambatInput) return;
 
         let tepatVal = tepatInput.value.trim();
         let riilVal = riilInput.value.trim();
@@ -103,46 +104,21 @@
         const mTepat = timeToMinutes(tepatVal);
         const mRiil = timeToMinutes(riilVal);
         let mLambat = (lambatValRaw === "") ? NaN : parseInt(lambatValRaw, 10);
+        const isLambatValid = !isNaN(mLambat) && lambatValRaw !== "";
 
-        // jika lambat tidak valid (NaN), maka kita anggap tidak terisi
-        const isLambatValid = !isNaN(mLambat) && lambatValRaw !== "" && !isNaN(parseFloat(lambatValRaw));
-        
-        // --- Hitung berapa field yang terisi (valid) ---
+        // Hitung berapa field yang terisi
         let filledCount = 0;
         if (mTepat !== null) filledCount++;
         if (mRiil !== null) filledCount++;
         if (isLambatValid) filledCount++;
 
-        // Kondisi 1: Jika ketiganya valid, maka tidak perlu ubah apapun (sudah konsisten), tapi kita bisa cek konsistensi ringan opsional
-        if (filledCount === 3) {
-            // opsional: jika data tidak konsisten, prioritas ubah berdasarkan yg terakhir diubah? tapi biarkan stabil.
-            // lebih baik biarkan saja, user sudah punya 3 nilai. Tapi jika terjadi inkonsistensi matematis, kita bisa pilih perbaiki berdasarkan trigger?
-            // demi UX mulus, jika semua terisi tapi tidak sinkron (misal tepat+riil menghasilkan lambat berbeda), maka kita sinkronkan sesuai 2 terakhir ?
-            // Agar lebih intuitif: jika ketiga terisi, kita hitung ulang berdasarkan tepat dan riil (atau tepat+lambat) 
-            // supaya data tetap logis. Tapi pengguna mungkin ingin mengedit salah satu, jadi lebih baik jangan overwrite paksa.
-            // Untuk menghindari kebingungan, kita hanya melakukan update jika ada ketidakcocokan berdasarkan prioritas trigger? 
-            // Karena tombol reset dan json bisa, kita tidak perlu ubah semua jika sudah konsisten.
-            // TAPI jika misalnya data tidak cocok (contoh tepat=10:00, riil=10:10, lambat=5) jelas error. Kita lakukan perbaikan dengan prioritas:
-            // Jika tidak konsisten, gunakan dua field yang paling baru (trigger) untuk mengoreksi yang ketiga.
-            // Tetapi untuk keandalan, kita lakukan pengecekan konsistensi: hitung lambat dari tepat & riil, bandingkan.
-            if (mTepat !== null && mRiil !== null) {
-                let diffFromTR = mRiil - mTepat;
-                // handle lintas tengah malam (wrap)
-                if (diffFromTR < -720) diffFromTR += 1440;
-                else if (diffFromTR > 720) diffFromTR -= 1440;
-                if (isLambatValid && Math.abs(diffFromTR - mLambat) > 1) {
-                    // tidak konsisten: update lambat berdasarkan tepat & riil
-                    lambatInput.value = diffFromTR;
-                }
-            }
-            return;
-        }
+        // Jika kurang dari 2 field terisi, tidak bisa menghitung
+        if (filledCount < 2) return;
 
-        // ================ LOGIKA UTAMA =================
         // Kasus 1: Tepat & Riil terisi -> hitung Lambat
         if (mTepat !== null && mRiil !== null) {
             let diff = mRiil - mTepat;
-            // handling midnight crossing (jika selisih ekstrim)
+            // handling midnight crossing
             if (diff < -720) diff += 1440;
             else if (diff > 720) diff -= 1440;
             lambatInput.value = diff;
@@ -156,94 +132,84 @@
             return;
         }
         
-        // Kasus 3: Riil & Lambat terisi -> hitung Tepat (ini yang sebelumnya error, sekarang fix total)
+        // Kasus 3: Riil & Lambat terisi -> hitung Tepat (ini yang diperbaiki)
         if (mRiil !== null && isLambatValid) {
             const calculatedTepat = mRiil - mLambat;
-            // Pastikan hasil tetap dalam range waktu yang wajar (0-1439 menit)
             tepatInput.value = minutesToTime(calculatedTepat);
             return;
         }
-        
-        // Kondisi tambahan: jika hanya satu field yang terisi atau kosong semua, tidak perlu update
-        // tetapi jika hanya tepat terisi & lambat sebelumnya terisi tapi kosong? tidak ada aksi
-        // Agar pengalaman mulus, jika hanya lambat terisi dan tidak ada waktu, tidak ada perubahan
-        // jika hanya riil terisi & lambat tidak ada, tidak ada.
-        // optional: jika trigger adalah lambat dan tepat null & riil null -> nothing
-        // JIKA user mengosongkan salah satu field, maka otomatis kita tidak overwrite berlebihan
     }
 
-    // Fungsi untuk memformat input waktu agar selalu HH:MM dan memanggil smartUpdate
-    function handleTimeInput(el, fieldType) {
-        // formatting otomatis
+    // Format input waktu otomatis
+    function handleTimeInput(el) {
         let raw = el.value.replace(/\D/g, '');
         if (raw.length > 4) raw = raw.slice(0, 4);
-        let formatted = raw;
+        
         if (raw.length >= 3) {
             let hourPart = raw.substring(0, 2);
             let minutePart = raw.substring(2, 4);
             if (parseInt(hourPart) > 23) hourPart = "23";
             if (minutePart.length === 2 && parseInt(minutePart) > 59) minutePart = "59";
-            formatted = `${hourPart}:${minutePart}`;
+            el.value = `${hourPart}:${minutePart}`;
         } else if (raw.length === 2) {
             let hourVal = parseInt(raw);
             if (hourVal > 23) hourVal = 23;
-            formatted = `${hourVal.toString().padStart(2, '0')}:`;
+            el.value = `${hourVal.toString().padStart(2, '0')}:`;
         } else {
-            formatted = raw;
+            el.value = raw;
         }
-        el.value = formatted;
         
         const row = el.closest("tr");
-        // panggil update pintar
-        smartUpdate(row, fieldType);
+        smartUpdate(row);
     }
 
-    // khusus untuk input lambat (number)
+    // Handle input lambat
     function handleLambatInput(el) {
         let val = el.value.trim();
         if (val === "") {
-            // jika dikosongkan, kita tetap panggil update untuk menghapus ketergantungan
             const row = el.closest("tr");
-            smartUpdate(row, 'lambat');
+            smartUpdate(row);
             return;
         }
         let num = parseInt(val, 10);
         if (isNaN(num)) {
             el.value = "";
             const row = el.closest("tr");
-            smartUpdate(row, 'lambat');
+            smartUpdate(row);
             return;
         }
-        // optional: batasi rentang -999 sampai 999 (realistis)
+        // batasi rentang realistis
         if (num > 999) num = 999;
         if (num < -999) num = -999;
         el.value = num;
         const row = el.closest("tr");
-        smartUpdate(row, 'lambat');
+        smartUpdate(row);
     }
 
-    // Membuat baris baru dengan data opsional (untuk import / inisialisasi)
+    // Membuat baris baru dengan data opsional
     function addRow(data = { tepat: "", riil: "", lambat: "" }) {
         const tbody = document.querySelector("#calcTable tbody");
         const row = document.createElement("tr");
 
-        // buat input tepat
+        // Buat input tepat
         const tepatInput = document.createElement("input");
         tepatInput.type = "text";
         tepatInput.className = "time-input tepat";
         tepatInput.value = data.tepat || "";
         tepatInput.placeholder = "00:00";
         tepatInput.maxLength = 5;
-        tepatInput.addEventListener("input", function() { handleTimeInput(this, 'tepat'); });
+        tepatInput.addEventListener("input", function() { handleTimeInput(this); });
         
+        // Buat input riil
         const riilInput = document.createElement("input");
         riilInput.type = "text";
         riilInput.className = "time-input riil";
         riilInput.value = data.riil || "";
         riilInput.placeholder = "00:00";
         riilInput.maxLength = 5;
-        riilInput.addEventListener("input", function() { handleTimeInput(this, 'riil'); });
+        riilInput.addEventListener("input", function() { handleTimeInput(this); });
         
+        // Buat input lambat
         const lambatInput = document.createElement("input");
         lambatInput.type = "number";
         lambatInput.className = "lambat-input lambat";
@@ -264,32 +230,46 @@
         row.appendChild(td3);
         tbody.appendChild(row);
         
-        // setelah menambahkan baris, jika ada data default yang terisi, lakukan sinkronisasi agar kolom ketiga langsung terhitung
-        if ((data.tepat && data.riil) || (data.tepat && data.lambat) || (data.riil && data.lambat)) {
-            smartUpdate(row, 'tepat'); // panggil update untuk memastikan konsistensi
+        // Jika ada data yang sudah terisi, lakukan update
+        if (data.tepat || data.riil || data.lambat) {
+            setTimeout(() => smartUpdate(row), 10);
         }
     }
 
-    // reset semua baris (bersihkan total)
+    // Fungsi untuk menambah baris baru (dipanggil tombol)
+    function addNewRow() {
+        addRow();
+        // scroll ke baris baru
+        const tbody = document.querySelector("#calcTable tbody");
+        const lastRow = tbody.lastElementChild;
+        if (lastRow) {
+            lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    // Reset semua baris ke 10 baris kosong
     function resetAllRows() {
         const tbody = document.querySelector("#calcTable tbody");
         tbody.innerHTML = "";
-        // default tambahkan 3 baris kosong agar tidak kosong
-        for(let i=0; i<3; i++) addRow();
+        for(let i = 0; i < 10; i++) {
+            addRow();
+        }
     }
 
-    // export JSON
+    // Export JSON
     function exportJSON() {
         const rows = document.querySelectorAll("#calcTable tbody tr");
         const data = Array.from(rows).map(row => ({
             tepat: row.querySelector(".tepat").value,
             riil: row.querySelector(".riil").value,
             lambat: row.querySelector(".lambat").value
-        })).filter(item => item.tepat || item.riil || item.lambat);
+        }));
+        
         if (data.length === 0) {
             alert("Tidak ada data untuk disimpan.");
             return;
         }
+        
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
@@ -298,38 +278,39 @@
         URL.revokeObjectURL(a.href);
     }
 
-    // import JSON
+    // Import JSON
     function importJSON(event) {
         const file = event.target.files[0];
         if (!file) return;
+        
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
                 const importedData = JSON.parse(e.target.result);
                 if (!Array.isArray(importedData)) throw new Error("Format harus array");
+                
                 const tbody = document.querySelector("#calcTable tbody");
                 tbody.innerHTML = "";
+                
                 if (importedData.length === 0) {
-                    for(let i=0;i<3;i++) addRow();
+                    // jika data kosong, buat 10 baris kosong
+                    for(let i = 0; i < 10; i++) addRow();
                 } else {
                     importedData.forEach(item => {
-                        const tepatStr = item.tepat || "";
-                        const riilStr = item.riil || "";
-                        let lambatVal = (item.lambat !== undefined && item.lambat !== "") ? item.lambat : "";
-                        addRow({ tepat: tepatStr, riil: riilStr, lambat: lambatVal });
+                        addRow({ 
+                            tepat: item.tepat || "", 
+                            riil: item.riil || "", 
+                            lambat: (item.lambat !== undefined && item.lambat !== "") ? item.lambat : "" 
+                        });
                     });
                 }
-                // setelah import, paksa sinkronisasi untuk semua baris (menghindari inkonsistensi)
+                
+                // Sinkronisasi ulang semua baris
                 const allRows = document.querySelectorAll("#calcTable tbody tr");
                 allRows.forEach(row => {
-                    // lakukan update ulang berdasarkan field yang terisi
-                    const tepatVal = row.querySelector(".tepat").value.trim();
-                    const riilVal = row.querySelector(".riil").value.trim();
-                    const lambatVal = row.querySelector(".lambat").value.trim();
-                    if ((tepatVal && riilVal) || (tepatVal && lambatVal) || (riilVal && lambatVal)) {
-                        smartUpdate(row, 'tepat');
-                    }
+                    smartUpdate(row);
                 });
+                
             } catch (err) {
                 alert("Gagal memuat JSON: " + err.message);
                 console.error(err);
@@ -340,24 +321,20 @@
         reader.readAsText(file);
     }
 
-    // inisialisasi awal: 5 baris kosong namun lebih user-friendly
-    function initDefaultRows() {
+    // Inisialisasi: buat 10 baris default
+    function init() {
         const tbody = document.querySelector("#calcTable tbody");
         tbody.innerHTML = "";
-        // kita buat 5 baris dengan placeholder kosong, tetapi beberapa contoh agar paham fitur?
-        // Tapi lebih baik 4 baris kosong penuh.
-        for(let i=0; i<4; i++) addRow();
-        // tambahkan baris contoh edukatif (tapi tidak mengganggu, bisa dihapus user)
-        // biarkan kosong agar user langsung coba.
+        for(let i = 0; i < 10; i++) {
+            addRow();
+        }
     }
     
-    // Attach event untuk global biar tidak bentrok
-    window.addEventListener("DOMContentLoaded", () => {
-        initDefaultRows();
-    });
+    // Jalankan inisialisasi saat halaman load
+    init();
     
-    // tambahkan method ke window agar tombol2 bisa akses
-    window.addRow = () => addRow();
+    // Expose fungsi ke global
+    window.addNewRow = addNewRow;
     window.exportJSON = exportJSON;
     window.importJSON = importJSON;
     window.resetAllRows = resetAllRows;
