@@ -9,7 +9,7 @@
         body { font-family: 'Segoe UI', sans-serif; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
         h2 { text-align: center; color: var(--primary); margin-bottom: 5px; }
-        .info { font-size: 11px; color: #d35400; margin-bottom: 20px; text-align: center; font-weight: bold; }
+        .info { font-size: 12px; color: #d35400; margin-bottom: 20px; text-align: center; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
         th { background-color: var(--primary); color: white; font-size: 13px; }
@@ -59,23 +59,21 @@
     }
 
     function formatAndCalc(el, type) {
-        // Jika input jam, tambahkan titik dua otomatis
         if (type !== 'lambat') {
             let v = el.value.replace(/\D/g, '');
-            if (v.length >= 3) {
-                v = v.substring(0, 2) + ':' + v.substring(2, 4);
-            }
+            if (v.length >= 3) { v = v.substring(0, 2) + ':' + v.substring(2, 4); }
             el.value = v;
         }
-        
-        // Jalankan perhitungan
         calculate(el, type);
     }
 
     function timeToMinutes(timeStr) {
         if (!timeStr || timeStr.length < 5) return null;
         const parts = timeStr.split(':');
-        return (parseInt(parts[0]) * 60) + parseInt(parts[1]);
+        let h = parseInt(parts[0]);
+        let m = parseInt(parts[1]);
+        if (h > 23 || m > 59) return null;
+        return (h * 60) + m;
     }
 
     function minutesToTime(totalMins) {
@@ -95,23 +93,25 @@
         const mRiil = timeToMinutes(riilIn.value);
         const mLambat = parseInt(lambatIn.value);
 
-        // LOGIKA 1: Jika sedang isi Lambat dan sudah ada Waktu Tepat -> Cari Riil
+        // LOGIKA PERBAIKAN:
+        // 1. Sedang isi Lambat + ada Tepat -> Cari Riil
         if (type === 'lambat' && mTepat !== null && !isNaN(mLambat)) {
             riilIn.value = minutesToTime(mTepat + mLambat);
         }
-        // LOGIKA 2: Jika sedang isi Riil dan sudah ada Lambat -> Cari Tepat
+        // 2. Sedang isi Lambat + ada Riil -> Cari Tepat
+        else if (type === 'lambat' && mRiil !== null && !isNaN(mLambat)) {
+            tepatIn.value = minutesToTime(mRiil - mLambat);
+        }
+        // 3. Sedang isi Riil + ada Lambat -> Cari Tepat
         else if (type === 'riil' && mRiil !== null && !isNaN(mLambat)) {
             tepatIn.value = minutesToTime(mRiil - mLambat);
         }
-        // LOGIKA 3: Jika sedang isi Riil dan sudah ada Tepat -> Cari Lambat
-        else if (type === 'riil' && mRiil !== null && mTepat !== null) {
-            let diff = mRiil - mTepat;
-            if (diff < -720) diff += 1440; 
-            else if (diff > 720) diff -= 1440;
-            lambatIn.value = diff;
+        // 4. Sedang isi Tepat + ada Lambat -> Cari Riil
+        else if (type === 'tepat' && mTepat !== null && !isNaN(mLambat)) {
+            riilIn.value = minutesToTime(mTepat + mLambat);
         }
-        // LOGIKA 4: Jika sedang isi Tepat dan sudah ada Riil -> Cari Lambat
-        else if (type === 'tepat' && mTepat !== null && mRiil !== null) {
+        // 5. Sedang isi Riil + ada Tepat -> Cari Lambat
+        else if ((type === 'riil' || type === 'tepat') && mRiil !== null && mTepat !== null) {
             let diff = mRiil - mTepat;
             if (diff < -720) diff += 1440; 
             else if (diff > 720) diff -= 1440;
