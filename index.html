@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalkulator Kelambatan KA - catkaujungtimur</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h2 { text-align: center; color: #002d5e; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #002d5e; color: white; }
+        input { width: 80%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
+        .btn-group { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
+        button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; background: #f39c12; color: white; font-weight: bold; }
+        button:hover { opacity: 0.8; }
+        .export-btn { background: #27ae60; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Kalkulator Kelambatan KA</h2>
+    
+    <table id="calcTable">
+        <thead>
+            <tr>
+                <th>Waktu Tepat</th>
+                <th>Waktu Riil</th>
+                <th>Kelambatan (Menit)</th>
+            </tr>
+        </thead>
+        <tbody>
+            </tbody>
+    </table>
+
+    <div class="btn-group">
+        <button onclick="addRow()">+ Tambah Baris</button>
+        <button class="export-btn" onclick="exportJSON()">Export JSON</button>
+        <input type="file" id="importFile" style="display:none" onchange="importJSON(event)">
+        <button onclick="document.getElementById('importFile').click()">Import JSON</button>
+    </div>
+</div>
+
+<script>
+    // Fungsi untuk menambah baris baru
+    function addRow(data = { tepat: "", riil: "", lambat: "" }) {
+        const tbody = document.querySelector("#calcTable tbody");
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+            <td><input type="time" class="tepat" value="${data.tepat}" oninput="calculate(this)"></td>
+            <td><input type="time" class="riil" value="${data.riil}" oninput="calculate(this)"></td>
+            <td><input type="number" class="lambat" value="${data.lambat}" placeholder="Min" oninput="calculate(this)"></td>
+        `;
+        tbody.appendChild(row);
+    }
+
+    // Logika perhitungan otomatis
+    function calculate(el) {
+        const row = el.closest("tr");
+        const tepat = row.querySelector(".tepat");
+        const riil = row.querySelector(".riil");
+        const lambat = row.querySelector(".lambat");
+
+        // Jika Tepat & Riil terisi -> Hitung Lambat
+        if (tepat.value && riil.value && el !== lambat) {
+            const t = new Date("1970-01-01T" + tepat.value);
+            const r = new Date("1970-01-01T" + riil.value);
+            let diff = (r - t) / 60000; // dalam menit
+            if (diff < 0) diff += 1440; // Jika lewat tengah malam
+            lambat.value = diff;
+        } 
+        // Jika Tepat & Lambat terisi -> Hitung Riil
+        else if (tepat.value && lambat.value && el !== riil) {
+            const t = new Date("1970-01-01T" + tepat.value);
+            t.setMinutes(t.getMinutes() + parseInt(lambat.value));
+            riil.value = t.toTimeString().slice(0, 5);
+        }
+        // Jika Riil & Lambat terisi -> Hitung Tepat
+        else if (riil.value && lambat.value && el !== tepat) {
+            const r = new Date("1970-01-01T" + riil.value);
+            r.setMinutes(r.getMinutes() - parseInt(lambat.value));
+            tepat.value = r.toTimeString().slice(0, 5);
+        }
+    }
+
+    // Export data ke file JSON
+    function exportJSON() {
+        const rows = document.querySelectorAll("#calcTable tbody tr");
+        const data = Array.from(rows).map(row => ({
+            tepat: row.querySelector(".tepat").value,
+            riil: row.querySelector(".riil").value,
+            lambat: row.querySelector(".lambat").value
+        }));
+        const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "data_kelambatan.json";
+        a.click();
+    }
+
+    // Import data dari file JSON
+    function importJSON(event) {
+        const reader = new FileReader();
+        reader.onload = function() {
+            const data = JSON.parse(reader.result);
+            document.querySelector("#calcTable tbody").innerHTML = ""; // Bersihkan tabel
+            data.forEach(item => addRow(item));
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+
+    // Tambah 5 baris kosong saat awal buka
+    for(let i=0; i<5; i++) addRow();
+</script>
+
+</body>
+</html>
