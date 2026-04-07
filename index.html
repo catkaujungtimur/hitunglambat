@@ -11,46 +11,29 @@
         h2 { text-align: center; color: var(--primary); margin-bottom: 5px; }
         .info { font-size: 12px; color: #d35400; margin-bottom: 20px; text-align: center; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         th { background-color: var(--primary); color: white; font-size: 13px; }
-
-        /* === INPUT WAKTU: pakai type=time agar native 24 jam === */
         .time-input {
-            width: 90px;
-            padding: 6px 4px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            text-align: center;
-            font-size: 15px;
-            font-family: monospace;
-            box-sizing: border-box;
+            width: 70px; padding: 7px 4px; border: 1px solid #ccc; border-radius: 4px;
+            text-align: center; font-size: 16px; font-family: monospace; box-sizing: border-box;
         }
         .lambat-input {
-            width: 65px;
-            padding: 6px 4px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            text-align: center;
-            font-size: 15px;
-            font-weight: bold;
-            font-family: monospace;
-            box-sizing: border-box;
+            width: 60px; padding: 7px 4px; border: 1px solid #ccc; border-radius: 4px;
+            text-align: center; font-size: 16px; font-weight: bold; font-family: monospace;
+            box-sizing: border-box; -moz-appearance: textfield;
         }
-        /* Hilangkan spinner number input */
         .lambat-input::-webkit-outer-spin-button,
         .lambat-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .lambat-input { -moz-appearance: textfield; }
-
+        .auto-filled { background: #fffbe6; }
         .btn-group { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
         button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; background: var(--secondary); color: white; font-weight: bold; }
     </style>
 </head>
 <body>
-
 <div class="container">
     <h2>Kalkulator Kelambatan KA</h2>
     <div class="info">2 kolom terisi, maka 1 kolom sisanya terisi otomatis</div>
-    
+
     <table id="calcTable">
         <thead>
             <tr>
@@ -72,111 +55,173 @@
 </div>
 
 <script>
-    function addRow(data = { tepat: "", riil: "", lambat: "" }) {
-        const tbody = document.querySelector("#calcTable tbody");
-        const row = document.createElement("tr");
+// ─── UTILITAS ─────────────────────────────────────────────────────────────────
 
-        // Gunakan type="time" → browser otomatis format HH:MM 24 jam
-        row.innerHTML = `
-            <td><input type="time" class="time-input tepat" value="${data.tepat}" oninput="calculate(this.closest('tr'), 'tepat')"></td>
-            <td><input type="time" class="time-input riil"  value="${data.riil}"  oninput="calculate(this.closest('tr'), 'riil')"></td>
-            <td><input type="number" class="lambat-input lambat" value="${data.lambat}" oninput="calculate(this.closest('tr'), 'lambat')"></td>
-        `;
-        tbody.appendChild(row);
+function isValidTime(str) {
+    if (!str || str.length !== 5 || str[2] !== ':') return false;
+    const h = parseInt(str.substring(0, 2), 10);
+    const m = parseInt(str.substring(3, 5), 10);
+    return !isNaN(h) && !isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
+function timeToMinutes(str) {
+    if (!isValidTime(str)) return null;
+    return parseInt(str.substring(0, 2), 10) * 60 + parseInt(str.substring(3, 5), 10);
+}
+
+function minutesToTime(mins) {
+    mins = ((mins % 1440) + 1440) % 1440;
+    return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+}
+
+function autoFormatTime(input) {
+    let raw = input.value.replace(/\D/g, '').substring(0, 4);
+    if (raw.length >= 3) {
+        input.value = raw.substring(0, 2) + ':' + raw.substring(2);
+    } else {
+        input.value = raw;
     }
+}
 
-    // Konversi nilai input type="time" (HH:MM) ke menit
-    function timeToMinutes(val) {
-        if (!val || val.length !== 5) return null;
-        const [h, m] = val.split(':').map(Number);
-        if (isNaN(h) || isNaN(m) || h > 23 || m > 59) return null;
-        return h * 60 + m;
-    }
+// ─── KALKULASI ────────────────────────────────────────────────────────────────
 
-    // Konversi menit ke string HH:MM
-    function minutesToTime(totalMins) {
-        totalMins = ((totalMins % 1440) + 1440) % 1440;
-        const h = Math.floor(totalMins / 60);
-        const m = totalMins % 60;
-        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-    }
+// Flag: sedang isi otomatis → jangan trigger kalkulasi ulang
+let filling = false;
 
-    function calculate(row, changed) {
-        const tepatIn  = row.querySelector(".tepat");
-        const riilIn   = row.querySelector(".riil");
-        const lambatIn = row.querySelector(".lambat");
+function setAuto(input, value) {
+    input.value = value;
+    input.classList.add('auto-filled');
+}
 
-        const mTepat  = timeToMinutes(tepatIn.value);
-        const mRiil   = timeToMinutes(riilIn.value);
-        const mLambat = lambatIn.value !== "" ? parseInt(lambatIn.value) : null;
+function clearAuto(input) {
+    input.value = '';
+    input.classList.remove('auto-filled');
+}
 
-        const hasTepat  = mTepat  !== null;
-        const hasRiil   = mRiil   !== null;
-        const hasLambat = mLambat !== null && !isNaN(mLambat);
+function calculate(row, changed) {
+    if (filling) return;
 
-        // ======== LOGIKA UTAMA: 2 kolom terisi → isi kolom ketiga ========
+    const tepatIn  = row.querySelector(".tepat");
+    const riilIn   = row.querySelector(".riil");
+    const lambatIn = row.querySelector(".lambat");
 
-        if (changed === 'lambat') {
-            // User baru isi Lambat
-            if (hasLambat && hasTepat) {
-                // Tepat + Lambat → Riil
-                riilIn.value = minutesToTime(mTepat + mLambat);
-            } else if (hasLambat && hasRiil) {
-                // Riil + Lambat → Tepat
-                tepatIn.value = minutesToTime(mRiil - mLambat);
-            }
-        } else if (changed === 'tepat') {
-            // User baru isi Tepat
-            if (hasTepat && hasLambat) {
-                // Tepat + Lambat → Riil
-                riilIn.value = minutesToTime(mTepat + mLambat);
-            } else if (hasTepat && hasRiil) {
-                // Tepat + Riil → Lambat
-                let diff = mRiil - mTepat;
-                if (diff < -720) diff += 1440;
-                else if (diff > 720) diff -= 1440;
-                lambatIn.value = diff;
-            }
-        } else if (changed === 'riil') {
-            // User baru isi Riil
-            if (hasRiil && hasLambat) {
-                // Riil + Lambat → Tepat
-                tepatIn.value = minutesToTime(mRiil - mLambat);
-            } else if (hasRiil && hasTepat) {
-                // Riil + Tepat → Lambat
-                let diff = mRiil - mTepat;
-                if (diff < -720) diff += 1440;
-                else if (diff > 720) diff -= 1440;
-                lambatIn.value = diff;
-            }
+    const mTepat  = timeToMinutes(tepatIn.value.trim());
+    const mRiil   = timeToMinutes(riilIn.value.trim());
+    const lambatStr = lambatIn.value.trim();
+    const mLambat = (lambatStr !== '' && !isNaN(Number(lambatStr))) ? parseInt(lambatStr, 10) : null;
+
+    const hasTepat  = mTepat  !== null;
+    const hasRiil   = mRiil   !== null;
+    const hasLambat = mLambat !== null;
+
+    // Apakah kolom tsb diisi user (bukan auto)?
+    const tepatIsUser  = !tepatIn.classList.contains('auto-filled');
+    const riilIsUser   = !riilIn.classList.contains('auto-filled');
+    const lambatIsUser = !lambatIn.classList.contains('auto-filled');
+
+    filling = true;
+
+    if (changed === 'tepat') {
+        // User mengubah kolom Tepat → bersihkan dulu status auto Tepat
+        tepatIn.classList.remove('auto-filled');
+
+        if (hasTepat && hasLambat && lambatIsUser) {
+            // Tepat(user) + Lambat(user) → isi Riil
+            setAuto(riilIn, minutesToTime(mTepat + mLambat));
+        } else if (hasTepat && hasRiil && riilIsUser) {
+            // Tepat(user) + Riil(user) → isi Lambat
+            let diff = mRiil - mTepat;
+            if (diff < -720) diff += 1440; else if (diff > 720) diff -= 1440;
+            setAuto(lambatIn, diff);
+        } else {
+            // Kolom lain belum cukup: bersihkan auto
+            if (!riilIsUser)   clearAuto(riilIn);
+            if (!lambatIsUser) clearAuto(lambatIn);
+        }
+
+    } else if (changed === 'riil') {
+        riilIn.classList.remove('auto-filled');
+
+        if (hasRiil && hasLambat && lambatIsUser) {
+            // Riil(user) + Lambat(user) → isi Tepat
+            setAuto(tepatIn, minutesToTime(mRiil - mLambat));
+        } else if (hasRiil && hasTepat && tepatIsUser) {
+            // Riil(user) + Tepat(user) → isi Lambat
+            let diff = mRiil - mTepat;
+            if (diff < -720) diff += 1440; else if (diff > 720) diff -= 1440;
+            setAuto(lambatIn, diff);
+        } else {
+            if (!tepatIsUser)  clearAuto(tepatIn);
+            if (!lambatIsUser) clearAuto(lambatIn);
+        }
+
+    } else if (changed === 'lambat') {
+        lambatIn.classList.remove('auto-filled');
+
+        if (hasLambat && hasTepat && tepatIsUser) {
+            // Lambat(user) + Tepat(user) → isi Riil
+            setAuto(riilIn, minutesToTime(mTepat + mLambat));
+        } else if (hasLambat && hasRiil && riilIsUser) {
+            // Lambat(user) + Riil(user) → isi Tepat
+            setAuto(tepatIn, minutesToTime(mRiil - mLambat));
+        } else {
+            if (!tepatIsUser) clearAuto(tepatIn);
+            if (!riilIsUser)  clearAuto(riilIn);
         }
     }
 
-    function exportJSON() {
-        const rows = document.querySelectorAll("#calcTable tbody tr");
-        const data = Array.from(rows).map(row => ({
-            tepat:  row.querySelector(".tepat").value,
-            riil:   row.querySelector(".riil").value,
-            lambat: row.querySelector(".lambat").value
-        })).filter(item => item.tepat || item.riil);
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "Data_Kelambatan_KA.json";
-        a.click();
-    }
+    filling = false;
+}
 
-    function importJSON(event) {
-        const reader = new FileReader();
-        reader.onload = function() {
-            const data = JSON.parse(reader.result);
-            document.querySelector("#calcTable tbody").innerHTML = "";
-            data.forEach(item => addRow(item));
-        };
-        reader.readAsText(event.target.files[0]);
-    }
+// ─── MANAJEMEN BARIS ──────────────────────────────────────────────────────────
 
-    for (let i = 0; i < 10; i++) addRow();
+function addRow(data = { tepat: "", riil: "", lambat: "" }) {
+    const tbody = document.querySelector("#calcTable tbody");
+    const row = document.createElement("tr");
+    row.innerHTML = `
+        <td><input type="text" class="time-input tepat" value="${data.tepat}" placeholder="HH:MM" maxlength="5"
+            oninput="autoFormatTime(this); calculate(this.closest('tr'), 'tepat')"
+            onblur="if(this.value && !isValidTime(this.value)){ this.value=''; }"
+        ></td>
+        <td><input type="text" class="time-input riil" value="${data.riil}" placeholder="HH:MM" maxlength="5"
+            oninput="autoFormatTime(this); calculate(this.closest('tr'), 'riil')"
+            onblur="if(this.value && !isValidTime(this.value)){ this.value=''; }"
+        ></td>
+        <td><input type="number" class="lambat-input lambat" value="${data.lambat}"
+            oninput="calculate(this.closest('tr'), 'lambat')"
+        ></td>
+    `;
+    tbody.appendChild(row);
+}
+
+// ─── EXPORT / IMPORT ──────────────────────────────────────────────────────────
+
+function exportJSON() {
+    const rows = document.querySelectorAll("#calcTable tbody tr");
+    const data = Array.from(rows).map(row => ({
+        tepat:  row.querySelector(".tepat").value,
+        riil:   row.querySelector(".riil").value,
+        lambat: row.querySelector(".lambat").value
+    })).filter(item => item.tepat || item.riil);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Data_Kelambatan_KA.json";
+    a.click();
+}
+
+function importJSON(event) {
+    const reader = new FileReader();
+    reader.onload = function () {
+        const data = JSON.parse(reader.result);
+        document.querySelector("#calcTable tbody").innerHTML = "";
+        data.forEach(item => addRow(item));
+    };
+    reader.readAsText(event.target.files[0]);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+for (let i = 0; i < 10; i++) addRow();
 </script>
 </body>
 </html>
