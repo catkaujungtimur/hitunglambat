@@ -65,6 +65,9 @@
 </div>
 
 <script>
+    // Flag untuk mencegah infinite loop saat update
+    let isUpdating = false;
+
     // Helper: konversi string "HH:MM" ke menit (validasi ketat)
     function timeToMinutes(timeStr) {
         if (!timeStr || typeof timeStr !== 'string') return null;
@@ -90,7 +93,9 @@
     }
 
     // fungsi utama perbaikan logika: update field berdasarkan dua nilai yang terisi
-    function smartUpdate(row) {
+    function smartUpdate(row, skipLambat = false) {
+        if (isUpdating) return;
+        
         const tepatInput = row.querySelector(".tepat");
         const riilInput = row.querySelector(".riil");
         const lambatInput = row.querySelector(".lambat");
@@ -103,8 +108,19 @@
 
         const mTepat = timeToMinutes(tepatVal);
         const mRiil = timeToMinutes(riilVal);
-        let mLambat = (lambatValRaw === "") ? NaN : parseInt(lambatValRaw, 10);
-        const isLambatValid = !isNaN(mLambat) && lambatValRaw !== "";
+        
+        // Parse lambat dengan hati-hati, biarkan user mengetik angka penuh
+        let mLambat = NaN;
+        let isLambatValid = false;
+        
+        if (lambatValRaw !== "") {
+            // Coba parse sebagai integer
+            const parsed = parseInt(lambatValRaw, 10);
+            if (!isNaN(parsed)) {
+                mLambat = parsed;
+                isLambatValid = true;
+            }
+        }
 
         // Hitung berapa field yang terisi
         let filledCount = 0;
@@ -115,75 +131,113 @@
         // Jika kurang dari 2 field terisi, tidak bisa menghitung
         if (filledCount < 2) return;
 
-        // Kasus 1: Tepat & Riil terisi -> hitung Lambat
-        if (mTepat !== null && mRiil !== null) {
-            let diff = mRiil - mTepat;
-            // handling midnight crossing
-            if (diff < -720) diff += 1440;
-            else if (diff > 720) diff -= 1440;
-            lambatInput.value = diff;
-            return;
-        }
+        isUpdating = true;
         
-        // Kasus 2: Tepat & Lambat terisi -> hitung Riil
-        if (mTepat !== null && isLambatValid) {
-            const calculatedRiil = mTepat + mLambat;
-            riilInput.value = minutesToTime(calculatedRiil);
-            return;
-        }
-        
-        // Kasus 3: Riil & Lambat terisi -> hitung Tepat (ini yang diperbaiki)
-        if (mRiil !== null && isLambatValid) {
-            const calculatedTepat = mRiil - mLambat;
-            tepatInput.value = minutesToTime(calculatedTepat);
-            return;
+        try {
+            // Kasus 1: Tepat & Riil terisi -> hitung Lambat
+            if (mTepat !== null && mRiil !== null) {
+                let diff = mRiil - mTepat;
+                // handling midnight crossing
+                if (diff < -720) diff += 1440;
+                else if (diff > 720) diff -= 1440;
+                if (!skipLambat) {
+                    lambatInput.value = diff;
+                }
+                return;
+            }
+            
+            // Kasus 2: Tepat & Lambat terisi -> hitung Riil
+            if (mTepat !== null && isLambatValid) {
+                const calculatedRiil = mTepat + mLambat;
+                riilInput.value = minutesToTime(calculatedRiil);
+                return;
+            }
+            
+            // Kasus 3: Riil & Lambat terisi -> hitung Tepat
+            if (mRiil !== null && isLambatValid) {
+                const calculatedTepat = mRiil - mLambat;
+                tepatInput.value = minutesToTime(calculatedTepat);
+                return;
+            }
+        } finally {
+            isUpdating = false;
         }
     }
 
     // Format input waktu otomatis
     function handleTimeInput(el) {
+        if (isUpdating) return;
+        
         let raw = el.value.replace(/\D/g, '');
         if (raw.length > 4) raw = raw.slice(0, 4);
         
+        let formatted = raw;
         if (raw.length >= 3) {
             let hourPart = raw.substring(0, 2);
             let minutePart = raw.substring(2, 4);
             if (parseInt(hourPart) > 23) hourPart = "23";
             if (minutePart.length === 2 && parseInt(minutePart) > 59) minutePart = "59";
-            el.value = `${hourPart}:${minutePart}`;
+            formatted = `${hourPart}:${minutePart}`;
         } else if (raw.length === 2) {
             let hourVal = parseInt(raw);
             if (hourVal > 23) hourVal = 23;
-            el.value = `${hourVal.toString().padStart(2, '0')}:`;
-        } else {
-            el.value = raw;
+            formatted = `${hourVal.toString().padStart(2, '0')}:`;
+        }
+        
+        // Hanya update jika nilai berubah
+        if (el.value !== formatted) {
+            el.value = formatted;
         }
         
         const row = el.closest("tr");
-        smartUpdate(row);
+        // Debounce sedikit untuk menghindari perhitungan berlebihan
+        setTimeout(() => smartUpdate(row), 10);
     }
 
-    // Handle input lambat
+    // Handle input lambat - FIX: biarkan user mengetik berapapun digit
     function handleLambatInput(el) {
-        let val = el.value.trim();
-        if (val === "") {
-            const row = el.closest("tr");
-            smartUpdate(row);
-            return;
-        }
-        let num = parseInt(val, 10);
-        if (isNaN(num)) {
-            el.value = "";
-            const row = el.closest("tr");
-            smartUpdate(row);
-            return;
-        }
-        // batasi rentang realistis
-        if (num > 999) num = 999;
-        if (num < -999) num = -999;
-        el.value = num;
+        if (isUpdating) return;
+        
+        // Biarkan user mengetik, jangan langsung parse
+        // Kita hanya akan melakukan update saat user selesai atau setelah timeout
         const row = el.closest("tr");
-        smartUpdate(row);
+        
+        // Gunakan debounce untuk menunggu user selesai mengetik
+        if (el.timeoutId) clearTimeout(el.timeoutId);
+        
+        el.timeoutId = setTimeout(() => {
+            let val = el.value.trim();
+            
+            if (val === "") {
+                // Kosongkan, tidak perlu update apa-apa
+                return;
+            }
+            
+            // Parse angka setelah user selesai mengetik
+            let num = parseInt(val, 10);
+            if (!isNaN(num)) {
+                // Batasi rentang realistis
+                if (num > 999) num = 999;
+                if (num < -999) num = -999;
+                
+                // Hanya update nilai jika berbeda dan dalam batas
+                if (parseInt(val, 10) !== num) {
+                    isUpdating = true;
+                    el.value = num;
+                    isUpdating = false;
+                }
+                
+                // Lakukan update cerdas
+                smartUpdate(row);
+            } else if (val !== "") {
+                // Jika bukan angka valid, kosongkan
+                isUpdating = true;
+                el.value = "";
+                isUpdating = false;
+            }
+            
+            el.timeoutId = null;
+        }, 300); // Tunggu 300ms setelah berhenti mengetik
     }
 
     // Membuat baris baru dengan data opsional
@@ -203,7 +257,7 @@
         // Buat input riil
         const riilInput = document.createElement("input");
         riilInput.type = "text";
-        riilInput.className = "time-input riil";
+        riilInput.className =time-input riil";
         riilInput.value = data.riil || "";
         riilInput.placeholder = "00:00";
         riilInput.maxLength = 5;
@@ -211,11 +265,12 @@
         
         // Buat input lambat
         const lambatInput = document.createElement("input");
-        lambatInput.type = "number";
+        lambatInput.type = "text"; // Ubah dari number ke text agar lebih fleksibel
         lambatInput.className = "lambat-input lambat";
         lambatInput.value = (data.lambat !== undefined && data.lambat !== "") ? data.lambat : "";
         lambatInput.placeholder = "menit";
-        lambatInput.step = "1";
+        lambatInput.inputMode = "numeric";
+        lambatInput.pattern = "-?\\d*";
         lambatInput.addEventListener("input", function() { handleLambatInput(this); });
         
         const td1 = document.createElement("td");
@@ -249,6 +304,8 @@
 
     // Reset semua baris ke 10 baris kosong
     function resetAllRows() {
+        if (isUpdating) return;
+        
         const tbody = document.querySelector("#calcTable tbody");
         tbody.innerHTML = "";
         for(let i = 0; i < 10; i++) {
