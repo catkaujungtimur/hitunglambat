@@ -27,9 +27,24 @@
         .auto-filled { background: #fffbe6; }
         .btn-group { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
         button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; background: var(--secondary); color: white; font-weight: bold; }
+        .top-bar { width: 100%; max-width: 600px; display: flex; justify-content: flex-start; margin-bottom: 12px; }
+        .home-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 14px; border-radius: 4px; background: var(--primary); color: white;
+            font-weight: bold; font-size: 14px; text-decoration: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: background 0.2s;
+        }
+        .home-btn:hover { background: #00438a; }
+        .home-btn svg { width: 16px; height: 16px; fill: currentColor; }
     </style>
 </head>
 <body>
+<div class="top-bar">
+    <a class="home-btn" href="https://catkaujungtimur.github.io/home/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3L12 3z"/></svg>
+        Home
+    </a>
+</div>
 <div class="container">
     <h2>Kalkulator Kelambatan KA</h2>
     <div class="info">2 kolom terisi, maka 1 kolom sisanya terisi otomatis</div>
